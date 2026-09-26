@@ -63,3 +63,19 @@ python3 scripts/update-dmr-pdfs.py
 2. `dmr/DMR协议学习导航.md` §3
 3. 课程/手册里硬编码的旧版本号（如有）
 4. 需要时用 `scripts/sync-to-github.sh` 把本地资料库整树推上 GitHub
+
+## Installing / refreshing the workflow file
+
+Pushing commits that create or change `.github/workflows/*` requires a GitHub token with the **`workflow`** OAuth scope (default `gh` login scopes `repo,gist,read:org` are not enough).
+
+Canonical workflow content also lives at `scripts/ci/update-dmr-pdfs.yml`. To install it onto GitHub Actions:
+
+```bash
+mkdir -p .github/workflows
+cp scripts/ci/update-dmr-pdfs.yml .github/workflows/update-dmr-pdfs.yml
+gh auth refresh -h github.com -s repo,workflow   # approve in browser
+git add .github/workflows/update-dmr-pdfs.yml
+git commit -m "chore(dmr): add update-dmr-pdfs GitHub Actions workflow"
+git push origin main
+```
+

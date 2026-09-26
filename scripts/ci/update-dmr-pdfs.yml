@@ -1,0 +1,42 @@
+name: Update DMR ETSI PDFs
+
+on:
+  schedule:
+    # Monday 01:29 UTC = 09:29 Asia/Shanghai
+    - cron: "29 1 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-dmr-pdfs
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check ETSI and update PDFs
+        run: python3 scripts/update-dmr-pdfs.py
+
+      - name: Commit and push if changed
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A dmr/ scripts/ || true
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "chore(dmr): update ETSI PDFs"
+          git push origin HEAD:main
