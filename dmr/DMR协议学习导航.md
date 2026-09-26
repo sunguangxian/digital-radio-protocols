@@ -94,19 +94,18 @@ https://www.dmrassociation.org/dmr-standards.html
 ## 6. 建议的资料库目录结构（可直接复制）
 
 ```text
-dmr-protocol/
-├── 00-入门/
-│   ├── TR102398_V1.5.1_系统设计总览.pdf
-│   └── DMR_Tier说明.md          # 可摘自本导航第 1 节
-├── 01-空中接口/
-│   └── TS102361-1_V2.7.1.pdf    # ⭐ 最新
-├── 02-语音业务/
-│   └── TS102361-2_V2.5.1.pdf
-├── 03-数据协议/
-│   └── TS102361-3_V1.3.1.pdf
-├── 04-集群协议/
-│   └── TS102361-4_V1.12.1.pdf
-└── README.md                    # 指向本导航
+digital-radio-protocols/
+├── dmr/                         # 本分册
+│   ├── 00-入门/
+│   ├── 01-空中接口/
+│   ├── 02-语音业务/
+│   ├── 03-数据协议/
+│   ├── 04-集群协议/
+│   ├── 学习推送/
+│   └── README.md / 总索引.md …
+├── shared/ dpmr/ nxdn/ pdt/ compare/   # 其他体制（占位）
+├── codex/
+└── scripts/
 ```
 
 ---

@@ -82,7 +82,7 @@
 本地资料库（同目录）：
 
 ```text
-dmr-protocol/
+digital-radio-protocols/dmr/
 ├── DMR整合学习手册.md          ← 你正在读的这一份
 ├── DMR协议学习导航.md / README.md
 ├── 00-入门/   TR102398… + 速查卡
