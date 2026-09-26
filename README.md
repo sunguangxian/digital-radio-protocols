@@ -29,6 +29,15 @@
 - DMR 分册：`dmr/00-入门` … `dmr/04-集群协议`（含官方 PDF）
 - 课程推送：[`dmr/学习推送/`](./dmr/学习推送/)
 
+## 自动更新 DMR 官方 PDF
+
+GitHub Actions 每周一检查 ETSI 是否发布了更新的 TR 102 398 / TS 102 361 Parts 1–4，有新版则下载并提交到 `main`。
+
+- 工作流：`.github/workflows/update-dmr-pdfs.yml`（cron `29 1 * * 1` UTC = 09:29 Asia/Shanghai）
+- 脚本：`scripts/update-dmr-pdfs.py`
+- 说明与本地用法：[`scripts/check-dmr-versions.md`](./scripts/check-dmr-versions.md)
+- 手动运行：`gh workflow run update-dmr-pdfs.yml --repo sunguangxian/digital-radio-protocols`
+
 ## 本地路径
 
 - 主路径：`/workspace/digital-radio-protocols`
