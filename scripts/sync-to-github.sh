@@ -23,7 +23,7 @@ git pull --ff-only origin main || true
 find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
 cd "$SRC"
 # Sync md, pdf, progress json, scripts, and whole tree structure
-find . -type f \( -name '*.md' -o -name '*.pdf' -o -name '进度.json' -o -path './scripts/*' -o -path './codex/*' -o -path './.github/*' \) ! -path './.git/*' -print0 |
+find . -type f \( -name '*.md' -o -name '*.pdf' -o -name '进度.json' -o -path './scripts/*' -o -path './codex/*' \) ! -path './.git/*' ! -path './.github/*' -print0 |
 while IFS= read -r -d '' f; do
   mkdir -p "$DST/$(dirname "$f")"
   cp -a "$f" "$DST/$f"
