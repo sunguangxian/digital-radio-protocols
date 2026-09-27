@@ -1,0 +1,563 @@
+# 第 19 课 · SYNC：语音/数据如何区分
+
+> DMR 深入学习 · **阶段 C 空口深入第 5 课**  
+> 适合：已吃透第 16 课「突发 264 = 108+48+108」、第 17 课「语音超帧 A–F / 360 ms」、第 18 课「CACH 与 Guard」，但听到「Voice SYNC」「Data SYNC」「同步不上」仍分不清「是图案没对上，还是色码/CACH 出了问题」的人  
+> 阅读量：约 **30–40 分钟** · 几乎不推公式 · 要把「**Traffic 中心 48 bit = SYNC 图案或嵌入；语音壳与数据壳靠不同 SYNC 图案区分；语音↔数据图案逐符号互补（单相关器正/负峰）；SYNC ≠ CACH(24) ≠ Colour Code ≠ Slot Type；首突发必须带 SYNC**」钉死  
+> **频谱 / 调制提醒（一小段，不是本课主线）**：RF 仍是整条 **12.5 kHz** 上路；调制仍是 **4FSK**，符号率约 **4800 baud**，总比特率约 **9.6 kbps**。SYNC **不换频、不改调制**——它只是货箱正中间那 **48 bit（约 5 ms）** 上的一段**已知比特图案**。频率/带宽/调制四句话见 `学习推送/加餐_频率带宽与调制解调.md`；本课主线是**中心 48 怎么用来认壳、认方向、帮迟后进入**。
+
+---
+
+## 1. 为什么本课重要（动机）
+
+第 16 课把货箱钉死了：264 = 108+48+108，中间座位要么 SYNC，要么嵌入。  
+第 17 课把语音火车排齐了：Burst **A** 中心是 **Voice SYNC**，B–F 多为嵌入。  
+第 18 课把缝拆开了：出站 CACH（24 bit）、入站 Guard——**缝不在 264 里**。
+
+同事接下来会盯着分析仪中间那一列问：
+
+- 同一频点、同一时隙上，为什么有时显示 **Voice SYNC**，有时显示 **Data SYNC**？Header / Terminator / CSBK 为啥常挂 **Data SYNC**，而超帧 A 挂 **Voice SYNC**？  
+- 用户中途开机：靠 Burst A 的 Voice SYNC「跳上火车」——这就是 **late entry** 的上车点。  
+- 排障口语「同步不上」：是中心 48 图案对不上？还是 Colour Code 不对？还是根本没找到突发边界？这三件事**不是一回事**。  
+- 直通 / Talkaround：分析仪还会蹦出 **TDMA DM TS1 / TS2** 图案——别用中继出站的 BS sourced 直觉硬套。  
+- 培训台上：若只背「有个 SYNC」三个字，后面会卡在同一处：
+
+> **SYNC 不是调制方式，也不是色码。它是 Traffic 货箱正中间那 48 bit 上的已知图案字典：语音壳与数据壳用不同图案；基站与移动台、中继与直通又再分册。接收机用相关器「对暗号」，正峰像语音、负峰像数据（互补直觉），从而决定后面按语音壳还是数据壳去拆。**
+
+本课目标是让你能自己讲清十件事：
+
+1. **为什么**现场要把「Voice SYNC / Data SYNC」单独认清（分析仪、迟后进入、Header/Terminator）；  
+2. 一张总图：264 = 108+48+108；中心 48 = SYNC **或** 嵌入；SYNC ≠ CACH ≠ CC ≠ Slot Type；  
+3. 白话术语：SYNC PDU、BS/MS sourced、Voice/Data SYNC、符号互补、standalone RC、DM TS1/TS2、EMB vs SYNC；  
+4. 图案**类别**表（只记名字，不抄 Table 9.2 hex）；  
+5. 接收机如何靠中心 48 区分语音壳与数据壳；  
+6. 疏密账本：语音 ~360 ms；入站数据 ~60 ms；出站数据 ~30 ms；首突发规则；  
+7. 现场岗位：分析仪、同步不上、Data SYNC 挂在 Header/Terminator、DM 图案、别和 CC/CACH 混；  
+8. 完整例子：BS 出站语音 A；数据 CSBK；MS 入站首突发；DM TS1 vs TS2；  
+9. 数字账本：48 bit、~5 ms、疏密表、264 vs 48 vs 24 vs 96；  
+10. 误区 + 自测 + 资料库路径 + 核验外链。
+
+---
+
+## 2. 总图 / 故事：货箱正中间那「暗号」
+
+先把整课装进一个故事，再落到 Part1 clauses **4.2.2、4.3、9.1.1** 与资料库 `01-空中接口/帧结构与字段定义.md` **§3、§4、§6**。精神与 `00-入门/DMR术语与帧结构速查卡.md`「SYNC」行一致。
+
+### 2.1 货箱回忆：中心 48 坐在哪儿？
+
+```text
+一个 Timeslot = 30.0 ms
+├── 内容窗 ≈ 27.5 ms · Traffic burst = 264 bit
+│         ┌──────────┬──────────────────┬──────────┐
+│         │ 108 bit  │     48 bit       │ 108 bit  │
+│         │ Payload  │ SYNC 或 嵌入信令  │ Payload  │
+│         │ （左货仓）│ （本课主场）      │ （右货仓）│
+│         └──────────┴──────────────────┴──────────┘
+│                      ▲
+│                      │ 场宽约 5.0 ms（规范图注）
+└── 缝 ≈ 2.5 ms · 入站 Guard / 出站 CACH（第 18 课；不在 264 内）
+```
+
+口诀：
+
+- **左右** = 货（语音或数据 Info）；  
+- **中间** = 要么整段 **SYNC 图案（48 bit）**，要么 **EMB+嵌入**（语音 B–F 常见）；  
+- **缝** = CACH/Guard，**别跟中间 48 抢名字**。
+
+### 2.2 一句话故事：对暗号认壳
+
+想象每个货箱中间贴一张「暗号卡」。接收机手里有一本**图案字典**（Part1 Table 9.1 / 9.2）：
+
+1. 先在时间轴上找到「像 48 bit 中心」的位置；  
+2. 用相关器把收到的比特/符号和字典里各图案比对；  
+3. 匹配到 **Voice** 类 → 后面按**语音壳**拆（左右多半是声码载荷；超帧节奏跟着走）；  
+4. 匹配到 **Data** 类 → 后面按**数据壳**拆（常有 Slot Type、Data Type、CSBK/Header 等）；  
+5. 若中心不是 SYNC 而是嵌入（语音 B–F），说明你已经在火车上了——边界靠前面的 Voice SYNC（及持续跟踪）维持。
+
+```text
+中心 48 决策树（学习视图，非实现状态机）：
+
+  中心 48 ─────────┬─── 匹配 Voice SYNC 图案 ──→ 语音壳读法
+                   │         （超帧 A；迟后进入上车点）
+                   ├─── 匹配 Data SYNC 图案 ───→ 数据壳读法
+                   │         （CSBK / Header / Terminator / Idle …）
+                   ├─── 匹配 standalone RC SYNC → 独立反向信道叙事
+                   └─── 不匹配 SYNC、却像 EMB 结构 → 嵌入窗口
+                             （语音 B–F 典型；不是「又一种 SYNC hex」）
+```
+
+### 2.3 和第 16–18 课怎么咬合？
+
+| 课 | 你已经会 / 本课加上 |
+|----|---------------------|
+| 第 16 | 264 = 108+48+108；中心是「SYNC **或** 嵌入」座位 |
+| 第 17 | 语音火车 A–F；**A = Voice SYNC**；B–F 多为嵌入 |
+| 第 18 | 缝里是 CACH(24) / Guard；**不是**中心 48 |
+| **本课** | 拆开中心 48 的 **SYNC 图案字典**：语音/数据、BS/MS、DM TS1/TS2 |
+
+三句话串起来：
+
+1. **货箱**是 264（第 16）；  
+2. **语音火车**在 A 挂 Voice SYNC（第 17）；  
+3. **SYNC 图案本身**分语音/数据/方向/直通册（本课）——缝里的 CACH 是另一本账（第 18）。
+
+### 2.4 调制账本钩子（巩固弱项，不重开加餐）
+
+加餐四句话在本课落成「SYNC 不改物理层」一句：
+
+1. **频率**：载波仍停在写频的那个 MHz；SYNC 不另开频点。  
+2. **带宽**：地皮仍约 **12.5 kHz**；中心 48 与两侧 payload 共用同一条地皮。  
+3. **调制**：48 bit 仍是 **4FSK** 卸下的比特（24 个 dibit / 符号），不是另一种调制。  
+4. **解调**：先对齐突发边界与中心，再对图案做相关；相关峰告诉你「这是哪种壳」，不是告诉你「换了一种波形」。
+
+口算复习：中心 48 bit ÷ 约 5.0 ms ≈ **9600 bit/s**——和整条 Traffic 水管同一量级，因为它本来就是 264 货箱的一部分。**不要**把 SYNC 速率和 CACH 的 ~566.67 bit/s 混加成「总吞吐」。
+
+---
+
+## 3. 白话术语表
+
+| 术语 | 一句话 | 别和谁混 |
+|------|--------|----------|
+| **SYNC PDU** | 放在 Traffic 中心、长度 **48 bit** 的同步图案单元 | ≠ CACH 24；≠ Colour Code 4 bit |
+| **Voice SYNC** | 标记「这是语音壳 / 超帧边界」的图案类 | ≠ 声码器；≠ Full LC |
+| **Data SYNC** | 标记「这是数据/控制壳」的图案类 | ≠ Data Type 字段本身 |
+| **BS sourced** | 图案字典里「基站发出」那一册 | 常见于中继**出站** |
+| **MS sourced** | 图案字典里「移动台发出」那一册 | 常见于**入站**上行 |
+| **符号互补 / 逐符号互补** | 语音与数据图案设计成相关器上**正峰 / 负峰**可分（资料库 §6） | 不是「把每个 bit 取反」的随口说法；实现查 PDF |
+| **相关器 / correlator** | 把收到的中心符号串和字典图案做匹配，看峰 | ≠ 色码校验；≠ CRC |
+| **EMB** | 语音突发中心不用整段 SYNC 时，两侧各约 8 bit 的嵌入头 | EMB **占用**中心 48 的结构，**不是**又一条 SYNC hex |
+| **嵌入信令** | 中心 48 里除 SYNC 外的用法（EMB+碎片等） | 语音 B–F 常见；数据侧另有 RC 等叙事 |
+| **Slot Type** | 数据壳里夹在中心两侧的 20 bit（含 CC + Data Type） | **只有数据壳**才这么读；别在 Voice SYNC 突发上硬找 |
+| **Colour Code (CC)** | 色码，区分同频系统 | 常藏在 Slot Type / EMB 里；**不是** SYNC 图案 |
+| **standalone RC SYNC** | 独立反向信道（96 bit 突发叙事）用的 SYNC 类 | ≠ Traffic 264 中心的普通 Voice/Data SYNC |
+| **TDMA DM TS1 / TS2** | 直通模式下按时隙 1/2 区分的 SYNC 册 | ≠ 中继 BS sourced 册 |
+| **首突发规则** | 两频 BS **入站**与**单频**传输：第一个突发**必须**带 SYNC（clause 4.3） | 后续才可按类型填 SYNC 或嵌入 |
+| **Late entry** | 中途切入语音；靠周期性 Voice SYNC（Burst A）上车 | 上车点是 SYNC，门牌常靠后续嵌入拼 LC |
+| **同步不上（口语）** | 收端对不上图案/边界/壳类型时的投诉 | 先分清：SYNC？CC？CACH？射频？ |
+
+---
+
+## 4. SYNC 图案类别与互补直觉
+
+引用精神：Part1 clauses **4.3、9.1.1**；Tables **9.1–9.2**；资料库 `帧结构与字段定义.md` **§6**。  
+**重要纪律**：本课**不全文抄录** Table 9.2 的 hex/binary。实现与认证请打开官方 PDF 查表；课文只教**类别、用途、互补直觉、疏密与首突发规则**。
+
+### 4.1 已定义图案类别（只记名字）
+
+| 类别 | 区分目的（学习摘要） |
+|------|----------------------|
+| **BS sourced Voice** | 基站出站 · 语音壳 |
+| **BS sourced Data** | 基站出站 · 数据/控制壳 |
+| **MS sourced Voice** | 移动台上行 · 语音壳 |
+| **MS sourced Data** | 移动台上行 · 数据/控制壳 |
+| **MS sourced standalone RC** | 独立反向信道 |
+| **TDMA DM TS1 Voice / Data** | 直通 · 时隙 1 · 语音或数据 |
+| **TDMA DM TS2 Voice / Data** | 直通 · 时隙 2 · 语音或数据 |
+| **Reserved** | 预留 |
+
+记忆口诀：
+
+- 先问：**谁发出的？**（BS / MS / DM）  
+- 再问：**什么壳？**（Voice / Data）  
+- DM 再多问一句：**哪个时隙？**（TS1 / TS2）  
+- 特殊册：standalone RC。
+
+### 4.2 语音 ↔ 数据：互补直觉（单相关器）
+
+资料库 §6 与规范精神：
+
+> 语音与数据图案设计为**逐符号互补**；接收端可用**单个相关器**：匹配语音时出现**正峰**，匹配数据时出现**负峰**（或等价的极性叙事）。
+
+教学比喻（不要当成实现伪代码）：
+
+```text
+相关器输出（示意）
+     ▲
+  正峰 │     ★  ← 对准 Voice SYNC 图案
+       │    / \
+  ─────┼───/───\──────────→ 时间 / 滑动位置
+       │        \ /
+  负峰 │         ★  ← 对准 Data SYNC 图案（互补）
+```
+
+现场用处：
+
+- 分析仪写「Voice SYNC」≈ 正峰那一册；  
+- 写「Data SYNC」≈ 负峰那一册；  
+- **同一相关器结构**就能分壳——这是协议故意给你的礼物。
+
+进阶提醒（知道即可，别被带跑）：部分开源解码文还会讨论「频谱翻转 / 极性」会让孪生图案对调，最终要靠 Slot Type Hamming、BPTC、CRC 等下游校验仲裁。**本课只要建立「互补 → 正负峰分壳」**；极性深潜留给实现课与外链。
+
+### 4.3 接收机怎么「听」出语音壳还是数据壳？
+
+学习步骤（对应 clause 4.3 精神）：
+
+1. **找中心**：在约 27.5 ms 货箱正中对准约 5 ms 的 48 bit 窗；  
+2. **对字典**：与 BS/MS/DM 各册 Voice/Data 图案做匹配；  
+3. **看峰**：Voice 类 → 语音壳；Data 类 → 数据壳；  
+4. **定后续读法**：  
+   - 语音壳：左右按声码载荷；若是 Burst A，记下超帧边界；  
+   - 数据壳：再读 Slot Type（CC + Data Type），再拆 CSBK / Header / Idle 等；  
+5. **持续跟踪**：语音 B–F 中心常是嵌入而非 SYNC——靠已建立的时序继续走，不必每个 30 ms 都重新「首次同步」。
+
+### 4.4 首突发必须带 SYNC（clause 4.3）
+
+规则摘要（务必背）：
+
+| 场景 | 首突发 |
+|------|--------|
+| 两频 BS **入站**（MS→BS） | **必须**含 SYNC |
+| **单频**传输（含许多 DM / 同频叙事） | **必须**含 SYNC |
+| 后续突发 | 按类型填 SYNC **或** 嵌入（语音 B–F 等） |
+
+为什么？对方要：
+
+1. 发现「有人开始发了」；  
+2. 对齐比特/符号定时与突发中心；  
+3. 立刻知道这是语音壳还是数据壳。
+
+没有首 SYNC，接收机可能「听见有载波」却**对不齐货箱中心**——这就是口语「同步不上」的经典物理层原因之一。
+
+### 4.5 Voice LC Header / Terminator 为什么常挂 Data SYNC？
+
+第 17 课提过：常规语音发起常先走 **Voice LC Header**（数据壳叙事），再进超帧 A…；结束可跟 **Terminator with LC**。
+
+口诀：
+
+- **门牌单据**（Header / Terminator / 许多 CSBK）→ 中心常是 **Data SYNC**；  
+- **语音车厢 A** → 中心是 **Voice SYNC**；  
+- **语音车厢 B–F** → 中心常是 **嵌入**，不是又刷一条 Voice SYNC。
+
+所以分析仪上你会看到：
+
+```text
+Data SYNC  · Voice LC Header
+Voice SYNC · Burst A（语音开始流）
+（嵌入）   · Burst B–E …
+Voice SYNC · 下一超帧 A
+Data SYNC  · Terminator with LC
+```
+
+别惊讶：「语音呼叫」里夹着 Data SYNC——那是**单据壳**，不是「突然改成发文件」。
+
+### 4.6 SYNC 疏密（clause 4.3；资料库 §4 表）
+
+| 方向 | 数据/控制 SYNC | 语音 SYNC | 备注 |
+|------|----------------|-----------|------|
+| **入站** | 可至约每 **60 ms** | 每 **360 ms**（Burst A） | 数据几乎每突发可带；语音按超帧 |
+| **出站** | 双时隙可见可至约每 **30 ms** | 每信道 **360 ms** | 出站连续发时，两槽都看得到 → 数据 SYNC 更密 |
+| 最坏（语音） | — | 双语音超帧错开约 30 ms → 约 **330 ms** | 资料库表「最坏情形」行 |
+
+背三个数就够现场用：
+
+- 语音 SYNC 机会 ≈ **360 ms** 一趟（每逻辑信道）；  
+- 入站数据 SYNC 可密到 ≈ **60 ms**；  
+- 出站数据 SYNC 可密到 ≈ **30 ms**（两槽都看时）。
+
+---
+
+## 5. 现场对照
+
+| 现场现象 / 岗位动作 | 和 SYNC 的关系 | 别误判成 |
+|--------------------|----------------|----------|
+| 协议分析仪显示 **Voice SYNC** | 中心 48 匹配语音册；多半在超帧 A 或语音流边界 | ≠ 一定已经拼出 Full LC 地址 |
+| 分析仪显示 **Data SYNC** | 数据/控制壳；看 Slot Type / Data Type | ≠ 「没有语音业务」——可能是 Header/Terminator |
+| 「同步不上」 | 先查：有没有首 SYNC？图案册是否 BS/MS/DM 用错？射频是否够干净？ | ≠ 一上来改 Colour Code；≠ 先骂 CACH |
+| 迟后进入：先静半拍再进会 | 等下一个 **Voice SYNC（Burst A）** 上车，再拼嵌入 LC | ≠ 每个 30 ms 都有完整门牌 |
+| Voice LC Header / Terminator | 中心常 **Data SYNC** | ≠ 和 Burst A 的 Voice SYNC 矛盾 |
+| 直通对讲分析仪出 **DM TS1/TS2** | 直通册图案；TS1/TS2 要分对 | ≠ 中继 BS sourced 图案 |
+| 同频干扰「串台感」 | 入/出站用不同 SYNC 册，有助拒收同频干扰（规范精神） | ≠ 单靠 SYNC 代替 Colour Code |
+| 写频 Colour Code 错 | 壳可能已 SYNC 上，但 CC 校验/听感仍错 | SYNC 成功 **≠** CC 正确 |
+| 出站缝里看 CACH | CACH 在 **≈2.5 ms 缝**，不在中心 48 | 别把 CACH 叫成 SYNC |
+| standalone RC / 96 bit | 独立 RC 突发用自己的 SYNC 类 | ≠ 普通 264 Traffic 中心 |
+
+岗位三问（建议贴显示器旁）：
+
+1. **中心是 SYNC 还是嵌入？**  
+2. **若是 SYNC：Voice 还是 Data？BS / MS / DM 哪一册？**  
+3. **若业务异常：是 SYNC 问题，还是 CC / Slot Type / 射频问题？**
+
+---
+
+## 6. 完整例子
+
+### 6.1 例子 A · BS 出站语音超帧 A（Voice SYNC）
+
+场景：Tier II 中继，Slot1 出站语音已建立。
+
+```text
+Outbound Slot1 · Burst A
+  [ Voice 108 | **** BS sourced Voice SYNC (48) **** | Voice 108 ]
+  缝：CACH 24（第 18 课）——与中心 SYNC 无关
+```
+
+你会在分析仪上看到：
+
+- 中心 = **Voice SYNC**（BS sourced）；  
+- 左右 = 语音载荷；  
+- 随后 B–E 中心转为嵌入，**不再**每突发都刷 Voice SYNC。
+
+教学点：Voice SYNC 的工作是「标边界 + 帮迟后进入」，不是「每个货箱都盖一次语音章」。
+
+### 6.2 例子 B · 出站数据 CSBK（Data SYNC）
+
+场景：基站发一条控制信令块。
+
+```text
+Outbound · CSBK（数据壳）
+  [ Info 98 | SlotType 10 | ** BS sourced Data SYNC (48) ** | SlotType 10 | Info 98 ]
+```
+
+你会在分析仪上看到：
+
+- 中心 = **Data SYNC**；  
+- Slot Type 里读出 Colour Code + Data Type=CSBK；  
+- **没有**超帧 A–F 编组。
+
+教学点：同一 264 外壳，中心换成 Data SYNC，读法整本切换到数据壳。
+
+### 6.3 例子 C · MS 入站首突发（必须 SYNC）
+
+场景：手机按 PTT，上行第一次开门。
+
+```text
+Inbound 首突发（clause 4.3）
+  [ … | ** MS sourced Voice 或 Data SYNC (48) ** | … ][ Guard ≈2.5 ms ]
+```
+
+规则：
+
+- **第一枪必须带 SYNC**（Voice 或 Data 取决于你先发语音流还是控制/数据单据）；  
+- 缝侧是 **Guard**，不是 CACH；  
+- 基站靠这枚 SYNC 完成：发现信号 → 对齐中心 → 分壳。
+
+若首突发中心被噪声打烂：表现常是「按了键中继没反应 / 同步不上」，此时别只怀疑 Talkgroup。
+
+### 6.4 例子 D · DM TS1 vs TS2
+
+场景：两台手台直通，不用中继。
+
+```text
+直通 MS-A 使用 TS1 发语音：
+  中心匹配 → TDMA DM TS1 Voice
+
+直通另一路（或对端时隙约定）TS2 发数据：
+  中心匹配 → TDMA DM TS2 Data
+```
+
+教学点：
+
+- DM 有**自己的图案册**，不是把 BS sourced 换个名字；  
+- TS1 / TS2 在 SYNC 层就分开——写频/分析仪时隙与图案册要一致；  
+- 直通通常**没有**基站 CACH 帮你报站（第 18 课），同步压力更在 Traffic 中心这本字典上。
+
+### 6.5 例子 E · 一通语音的「SYNC 足迹」串烧
+
+```text
+时间 →
+Data SYNC  : Voice LC Header（门牌单据，数据壳）
+Voice SYNC : Superframe A
+嵌入       : B C D E
+（F 嵌入类窗口，方向相关）
+Voice SYNC : 下一超帧 A …
+Data SYNC  : Terminator with LC（结束单据，数据壳）
+```
+
+背这张足迹图，分析仪就不会再问「语音通话为啥出现 Data SYNC」。
+
+---
+
+## 7. 数字账本
+
+| 数字 | 含义 | 别和谁搞混 |
+|------|------|------------|
+| **48 bit** | SYNC PDU（或嵌入窗口）长度 | ≠ CACH 24；≠ Slot Type 20 |
+| **约 5.0 ms** | 中心 48 场宽（规范图注） | ≠ 缝 2.5 ms |
+| **264 bit** | Traffic 货箱总长 | 含中心 48，不是「264 另外再加 SYNC」 |
+| **24 bit** | CACH（出站缝） | 不在 264 内 |
+| **96 bit** | standalone RC 突发（48 SYNC + 48 窗口） | ≠ Traffic 264 |
+| **360 ms** | 语音超帧；语音 SYNC 机会节奏 | 6 × 30 ms |
+| **≈60 ms** | 入站数据/控制 SYNC 可达到的密度量级 | 约一个 TDMA frame |
+| **≈30 ms** | 出站双时隙可见时数据 SYNC 可达到的密度量级 | 约一个时隙 |
+| **≈330 ms** | 出站双语音超帧错开时的语音 SYNC 最坏等待量级 | 资料库「最坏情形」 |
+| **4800 baud / 9.6 kbps** | 4FSK 符号率 / 比特率 | SYNC 不另开水管 |
+| **12.5 kHz** | RF 带宽 | SYNC 不劈频 |
+
+三兄弟划界（第 16/18 课延续）：
+
+```text
+Traffic 264 ── 货箱（中心可放 SYNC 48）
+CACH     24 ── 出站缝小广播
+RC       96 ── 独立反向信道突发（自带 SYNC 类）
+```
+
+---
+
+## 8. 常见误区（10 则）
+
+1. **「SYNC 是一种调制。」** → 否。仍是 4FSK 比特图案。  
+2. **「SYNC 就是 Colour Code。」** → 否。CC 在 Slot Type / EMB 等处；SYNC 是中心图案。  
+3. **「SYNC 就是 CACH。」** → 否。CACH 在缝里 24 bit；SYNC 在货箱中心 48 bit。  
+4. **「每个语音突发中间都是 Voice SYNC。」** → 否。通常 **A** 是 Voice SYNC；**B–F** 多为嵌入。  
+5. **「语音呼叫里不该出现 Data SYNC。」** → 否。Header / Terminator 等单据壳常挂 Data SYNC。  
+6. **「同步成功 = 色码一定对。」** → 否。壳对上了，CC 仍可能错。  
+7. **「同步不上 = 先改 Colour Code。」** → 顺序常反了：先看有没有 SYNC、册是否 BS/MS/DM 用错、射频是否够。  
+8. **「入站也可以像出站那样密到每 30 ms 一个语音 SYNC。」** → 语音仍按超帧约 360 ms；密的是**数据** SYNC。  
+9. **「直通可以继续用 BS sourced 图案理解。」** → 否。看 **TDMA DM TS1/TS2** 册。  
+10. **「把 Table 9.2 hex 背进培训 PPT 就等于会 SYNC。」** → 类别、疏密、首突发、分壳决策更重要；hex 以 PDF 为准，资料库也刻意不全文抄录。
+
+---
+
+## 9. 自测（8 题）
+
+**题 1.** Traffic 突发中心 48 bit 可能是哪两类东西？它和出站缝里的 CACH 是同一段吗？
+
+<details><summary>简答</summary>
+
+中心 48 = **SYNC 图案** 或 **嵌入信令（如 EMB+碎片）**。CACH 是出站 **≈2.5 ms 缝**里的 **24 bit**，**不在** 264 货箱内，不是同一段。
+
+</details>
+
+**题 2.** 接收机如何区分「语音壳」与「数据壳」？互补直觉里正峰 / 负峰分别暗示什么？
+
+<details><summary>简答</summary>
+
+用相关器匹配中心 48 与字典图案。资料库精神：语音与数据**逐符号互补**，单相关器上常表现为语音**正峰**、数据**负峰**（或等价极性叙事）。匹配 Voice 类 → 语音壳；Data 类 → 数据壳。
+
+</details>
+
+**题 3.** 列出至少五类 SYNC 图案名称（不要写 hex）。DM 为什么还要分 TS1 / TS2？
+
+<details><summary>简答</summary>
+
+例如：BS sourced Voice / Data；MS sourced Voice / Data；MS sourced standalone RC；TDMA DM TS1 Voice/Data；TDMA DM TS2 Voice/Data；（另有 Reserved）。DM 分 TS1/TS2 是为了在直通两时隙上用不同图案册区分，避免和中继 BS 册混用。
+
+</details>
+
+**题 4.** 语音 SYNC 大约多密？入站数据、出站数据各可密到什么量级？
+
+<details><summary>简答</summary>
+
+语音约每 **360 ms**（Burst A）。入站数据/控制可至约 **60 ms**；出站因双时隙可见可至约 **30 ms**。
+
+</details>
+
+**题 5.** 两频 BS 入站或单频传输的**首突发**有什么硬规则？为什么？
+
+<details><summary>简答</summary>
+
+**必须带 SYNC**（clause 4.3）。为了让对方发现信号、对齐突发中心、并立刻分清语音壳还是数据壳。
+
+</details>
+
+**题 6.** Voice LC Header 与 Terminator with LC 的中心更常是 Voice SYNC 还是 Data SYNC？Burst A 呢？
+
+<details><summary>简答</summary>
+
+Header / Terminator 更常是 **Data SYNC**（单据壳）。Burst A 是 **Voice SYNC**。
+
+</details>
+
+**题 7.** 同事说「同步不上，把 Colour Code 从 1 改成 2 试试」。你怎样用三问帮他降温？
+
+<details><summary>简答</summary>
+
+三问：① 中心是 SYNC 还是嵌入？② 若是 SYNC，Voice/Data 与 BS/MS/DM 册是否匹配场景？③ 射频与首突发是否干净？——SYNC 失败与 CC 失败不是同一病；先分诊再改写频。
+
+</details>
+
+**题 8.** （巩固调制弱项）SYNC 有没有改用别的调制或劈开 12.5 kHz？48 bit 中心大约对应多少毫秒？能否把 SYNC 和 CACH 的比特率直接加总对外乱讲？
+
+<details><summary>简答</summary>
+
+没有改调制，也不劈频；仍是 **12.5 kHz + 4FSK**。中心约 **5.0 ms**。**不能**把 SYNC（货箱内）和 CACH（缝里另一水管）比特率随便加总当对外口径。
+
+</details>
+
+---
+
+## 10. 资料库加深
+
+按这个顺序读，避免一上来背 Table 9.2 全表 hex：
+
+| 顺序 | 路径 | 读什么 |
+|------|------|--------|
+| 1 | `00-入门/DMR术语与帧结构速查卡.md` | SYNC 行；语音/数据不同图案；疏密一句 |
+| 2 | `01-空中接口/帧结构与字段定义.md` **§3** | 108+48+108；中心 SYNC 或嵌入；~5 ms |
+| 3 | 同上 **§4** | 超帧 A = Voice SYNC；SYNC 疏密对照表 |
+| 4 | 同上 **§6** | SYNC 类型摘要；类别表；互补直觉；首突发规则 |
+| 5 | `学习推送/第16课.md` | 中心座位总览；264 vs 48 |
+| 6 | `学习推送/第17课.md` | A = Voice SYNC；B–F 嵌入；迟后进入 |
+| 7 | `学习推送/第18课.md` | CACH/Guard 与中心 48 划界 |
+| 8 | 官方 **TS 102 361-1 V2.7.1** clause **4.2.2、4.3、9.1.1**；Tables **9.1–9.2** | SYNC 原文与图案表；**hex 只在 PDF 查**；冲突以 PDF 为准 |
+| 9 | **TR 102 398** 对应导读 | 概念对照，**不是**替代 TS |
+| 10 | `01-空中接口/跳过项原则说明.md` | 为何资料库不全文抄 SYNC hex |
+| 11 | `学习推送/加餐_频率带宽与调制解调.md` | 若 12.5 kHz / 4FSK 仍糊 |
+
+官方版本锚点：**Part1 V2.7.1**；**TR V1.5.1**。冲突规则：**TS > TR > 手册/课文笔记**。课文是学习整理，**实现与认证以 ETSI PDF 为准**。
+
+---
+
+## 11. 下一课预告
+
+**第 20 课 · Colour Code 与同频系统**
+
+本课站住了 Traffic 中心那 48 bit：Voice / Data 图案分壳，BS / MS / DM 分册，首突发与疏密有数。下一课钻进「同频怎么不搅成一锅」：**Colour Code（色码）** 出现在哪里（Slot Type / EMB 等）、和 SYNC 成功有何不同、写频与现场串台如何对照。仍少公式，多对照「SYNC ≠ Colour Code ≠ CACH」。
+
+---
+
+## 12. 推荐阅读与视频
+
+本课外链为 **2026-09-27**（晚间推送）检索核验；**不编造地址**。策略 = **Part1 SYNC 原文 + TR 导读 + Wavecom/Guido 帧文 + VK4PK 时间参数 + GopherTrunk SYNC 专文 + 中文科普（带冲突声明）**。
+
+1. **[ETSI TS 102 361-1 V2.7.1｜Air Interface（协会镜像）](https://www.dmrassociation.org/public-downloads/standards/ts_10236101v020701p.pdf)**  
+   - **为什么值得看**：clause **4.3** 专讲 SYNC 用途、语音/数据不同图案、入/出站不同图案、疏密与**首突发必须 SYNC**；clause **9.1.1** 与 Tables **9.1–9.2** 给类别与（PDF 内）比特图案——**请在 PDF 内查 hex，不要从课文抄全表**。  
+   - **备链**：[ETSI 官网同版本 PDF](https://www.etsi.org/deliver/etsi_ts/102300_102399/10236101/02.07.01_60/ts_10236101v020701p.pdf)（部分网络可能间歇拦截，可用协会镜像）。  
+   - **适合哪一段**：第 2、4、5、7、10 节加深。  
+   - **基础**：进阶；英文 PDF；**冲突以该 PDF 为准**。
+
+2. **[ETSI TR 102 398 V1.5.1｜General System Design（协会镜像）](https://dmrassociation.org/public-downloads/standards/tr_102398v010501p.pdf)**  
+   - **为什么值得看**：系统设计导读用同样的「中心同步场 / 语音与数据不同 SYNC」叙事，比纯条款好读；突发长度 264/24/96 也便于和本课账本对账。  
+   - **适合哪一段**：第 2、7、10 节。  
+   - **注意**：TR **不是**规范；冲突以 TS 为准。  
+   - **基础**：入门～中级；英文 PDF。
+
+3. **[GopherTrunk｜DMR End to End, Part 2: Bursts, Sync Words & Polarity](https://gophertrunk.org/blog/deep-dives/dmr-end-to-end-02-bursts-sync-polarity/)**  
+   - **为什么值得看**：少见的 **SYNC 专篇**：九类 48-bit 图案、相关检测、语音/数据在极性翻转下的「孪生」关系、以及为何 SYNC 匹配后还要靠 Slot Type / FEC 仲裁——和本课「互补直觉 + 分壳」同向，并可作进阶阅读。  
+   - **适合哪一段**：第 4.2、4.3、6、8 节后对照。  
+   - **注意**：实现/开源解码向深潜；术语与极性细节以帮助理解为限，**硬图案与条款以 Part1 V2.7.1 为准**；文中若出现具体 hex，请回到官方 Table 9.2 核对，勿当唯一真源。  
+   - **基础**：中级～进阶；英文网页。
+
+4. **[Wavecom｜Advanced Protocol DMR（PDF）](https://www.wavecom.ch/content/pdf/advanced_protocol_dmr.pdf)**  
+   - **为什么值得看**：突发与帧结构图把中心 SYNC/嵌入位置画清楚，便于和本课总图、语音/数据壳对照。  
+   - **适合哪一段**：第 2、6 节。  
+   - **注意**：厂商/分析仪向综述；个别术语口误勿盲从；**以 ETSI 为准**。  
+   - **基础**：中级；英文 PDF。
+
+5. **[Alessandro Guido｜How DMR Works — Conventional Tier 2（PDF）](https://www.qsl.net/kb9mwr/projects/dv/dmr/How%20DMR%20Works%20Conventional%20Tier%202.pdf)**  
+   - **为什么值得看**：常规 Tier II 口吻串起突发、同步与帧结构，适合在学完类别表后做「整页复盘」。  
+   - **适合哪一段**：第 4、6、7 节后对照。  
+   - **注意**：培训文年代可能早于现行 Part1 V2.7.1；**硬条款以 V2.7.1 为准**。  
+   - **基础**：入门～中级；英文 PDF。
+
+6. **[VK4PK｜DMR Signal Processing Notes](https://lyonscomputer.com.au/MMDVM/DMR-Signal-Processing-Notes/DMR-Signal-Processing-Notes.html)**  
+   - **为什么值得看**：一页把 264 / 108+48+108 / 4FSK / 4800 baud 写在一起，方便确认「SYNC 仍在同一物理水管里」。  
+   - **适合哪一段**：第 2.4、7 节；巩固调制弱项。  
+   - **基础**：入门～中级；英文网页；业余/MMDVM 笔记，**规范数字仍以 ETSI 为准**。
+
+7. **[科讯｜DMR 对讲机数字协议详解](http://www.cqkexun.com/service/problem/hand/292.html)**  
+   - **为什么值得看**：中文建立「时隙 / 突发 / 同步」第一印象；可读作本课之前的语感热身。  
+   - **适合哪一段**：第 2–3 节。  
+   - **注意**：科普文版本偏旧；SYNC 类别与疏密细节**以 ETSI TS 为准**。  
+   - **基础**：入门；中文。
+
+8. **[DMR Association｜DMR Feature Evolution（PDF）](https://dmrassociation.org/public-downloads/documents/DMR_Association_DMR_Feature_Evolution.pdf)**  
+   - **为什么值得看**：协会培训向总图；可与第 17 课嵌入/迟后进入连读，帮助把「Voice SYNC 上车点」嵌回业务全景。  
+   - **适合哪一段**：读完本课想回看超帧与嵌入边界时。  
+   - **注意**：不是 SYNC 专章；幻灯版本锚点可能早于现行 Part1。  
+   - **基础**：入门～中级；英文 PDF。
+
+**说明（视频）**：公开检索未找到专门把 **「Traffic 中心 48 bit：Voice/Data SYNC 图案分壳；BS/MS/DM 分册；逐符号互补与相关峰；首突发必须 SYNC；语音 ~360 ms / 数据更密；SYNC ≠ CC ≠ CACH」** 讲透的独立高质量中文/英文短片（多数入门视频只口播「有同步字」或厂商产品介绍；实现向材料多为源码/博客而非课堂视频）。本课**未找到合适公开视频**。建议用：**Part1 clause 4.3 + 9.1.1（Table 9.2 只在 PDF 查）+ GopherTrunk SYNC 专文 + Wavecom/Guido 帧图 + 资料库 §6** 对照自学。
+
+---
+
+*推送说明：本课为阶段 C「SYNC：语音/数据如何区分」。频谱/调制仅保留短提醒（SYNC 不换频、不改 4FSK），不复述加餐全文。主文加厚覆盖动机、中心 48 总图、术语、图案类别（无 Table 9.2 hex 全文）、互补直觉、首突发与疏密、现场对照、五则工作例子、数字账本、十则误区、八题自测、资料库路径与八条核验外链（并诚实标明未找到合适公开专题视频）。读完应能向同事讲清「为何分析仪有 Voice/Data SYNC、Header 为何挂 Data SYNC、同步不上如何与 CC/CACH 分诊、264/48/24/96 如何分柜」，并进入第 20 课 Colour Code。*
