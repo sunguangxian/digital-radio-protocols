@@ -1,9 +1,9 @@
 {
-  "lesson": 31,
+  "lesson": 32,
   "total_planned": 40,
   "started": "2026-09-19",
   "audience": "DMR方向工作人员，通信基础弱，需由浅入深",
-  "last_sent": "2026-10-03T09:52+08:00",
+  "last_sent": "2026-10-03T18:52+08:00",
   "content_preference": "加厚：每课20-35分钟，含总图/术语/现场对照/自测/加深阅读",
   "lesson_1_expanded": true,
   "weak_spots": [
@@ -17,7 +17,7 @@
   "include_web_resources": true,
   "detail_level": "尽量详细 + 每课2-4个优质外链",
   "lesson_3_done": true,
-  "last_lesson_file": "学习推送/第30课.md",
+  "last_lesson_file": "学习推送/第31课.md",
   "lesson_4_done": true,
   "lesson_5_done": true,
   "lesson_6_done": true,
@@ -44,5 +44,6 @@
   "lesson_27_done": true,
   "lesson_28_done": true,
   "lesson_29_done": true,
-  "lesson_30_done": true
+  "lesson_30_done": true,
+  "lesson_31_done": true
 }
